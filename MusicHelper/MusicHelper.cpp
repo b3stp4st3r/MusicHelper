@@ -17,21 +17,29 @@ void autostart() {
     GetModuleFileNameW(NULL, path, MAX_PATH);
 
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-        RegSetValueExW(hKey, L"MusicHotkeys", 0, REG_SZ, (BYTE*)path, (wcslen(path) + 1) * sizeof(wchar_t));
+        RegSetValueExW(hKey, L"MusicHotkeys", 0, REG_SZ, (BYTE*)path, (DWORD)(wcslen(path) + 1) * sizeof(wchar_t));
         RegCloseKey(hKey);
     }
 }
 
-void bind(BYTE key) {
-    keybd_event(key, 0, 0, 0);
-    keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
+void send_media_key(WORD key) {
+    INPUT inputs[2] = {};
+
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = key;
+
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = key;
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+
+    SendInput(2, inputs, sizeof(INPUT));
 }
 
 void contextmenu(HWND hwnd) {
     POINT mousePos;
     GetCursorPos(&mousePos);
     HMENU hMenu = CreatePopupMenu();
-    
+
     if (hMenu) {
         AppendMenuW(hMenu, MF_STRING, 2001, L"Выход");
         SetForegroundWindow(hwnd);
@@ -55,13 +63,16 @@ LRESULT CALLBACK WindowMessageHandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         break;
 
     case WM_HOTKEY:
-        if (wParam == ID_NEXT) bind(VK_MEDIA_NEXT_TRACK);
-        else if (wParam == ID_PREV) bind(VK_MEDIA_PREV_TRACK);
-        else if (wParam == ID_PLAY) bind(VK_MEDIA_PLAY_PAUSE);
+        if (wParam == ID_NEXT) send_media_key(VK_MEDIA_NEXT_TRACK);
+        else if (wParam == ID_PREV) send_media_key(VK_MEDIA_PREV_TRACK);
+        else if (wParam == ID_PLAY) send_media_key(VK_MEDIA_PLAY_PAUSE);
         break;
 
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &g_trayData);
+        UnregisterHotKey(hwnd, ID_NEXT);
+        UnregisterHotKey(hwnd, ID_PREV);
+        UnregisterHotKey(hwnd, ID_PLAY);
         PostQuitMessage(0);
         break;
 
@@ -72,16 +83,16 @@ LRESULT CALLBACK WindowMessageHandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
-    autostart(); // закоментировать эту строку если не надо добавляться в автозагрузку
+    autostart();
 
-    const wchar_t* clsName = L"MusicHelper";
+    const wchar_t* clsName = L"MusicHelperClass";
     WNDCLASSW wc = {};
     wc.lpfnWndProc = WindowMessageHandler;
     wc.hInstance = hInst;
     wc.lpszClassName = clsName;
     RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowExW(0, clsName, NULL, 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInst, NULL);
+    HWND hwnd = CreateWindowExW(0, clsName, L"MusicHelper", 0, 0, 0, 0, 0, NULL, NULL, hInst, NULL);
     if (!hwnd) return 1;
 
     RegisterHotKey(hwnd, ID_NEXT, MOD_CONTROL | MOD_ALT, 'K');
@@ -93,7 +104,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     g_trayData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_trayData.uCallbackMessage = WM_TRAYICON;
     g_trayData.hIcon = LoadIconW(NULL, IDI_APPLICATION);
-    wcscpy_s(g_trayData.szTip, L"Управление музыкой по биндам");
+    wcscpy_s(g_trayData.szTip, L"Управление музыкой");
     Shell_NotifyIconW(NIM_ADD, &g_trayData);
 
     MSG msg;
